@@ -220,6 +220,7 @@ void app_main(void)
 #endif // RMW_UXRCE_TRANSPORT_CUSTOM
 
     esp_log_level_set("pid", ESP_LOG_DEBUG);
+    esp_log_level_set("stepper", ESP_LOG_WARN);
 
     stepper_init(
         &actuator.stepper,
