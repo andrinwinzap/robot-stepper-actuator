@@ -47,6 +47,9 @@
 rcl_publisher_t publisher;
 std_msgs__msg__Float32 msg;
 
+rcl_subscription_t velocity_subscriber;
+std_msgs__msg__Float32 velocity_msg;
+
 static const char *TAG = "Actuator";
 
 typedef float (*target_provider_t)(void);
@@ -60,6 +63,13 @@ typedef struct
 } actuator_t;
 
 actuator_t actuator;
+
+void velocity_subscriber_callback(const void *msgin)
+{
+    const std_msgs__msg__Float32 *msg = (const std_msgs__msg__Float32 *)msgin;
+    actuator.velocity_target = msg->data;
+    ESP_LOGI(TAG, "Received new velocity target: %f", msg->data);
+}
 
 void i2c_init(void)
 {
@@ -147,6 +157,13 @@ void micro_ros_task(void *arg)
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
         "freertos_float32_publisher"));
 
+    // create subscriber
+    RCCHECK(rclc_subscription_init_default(
+        &velocity_subscriber,
+        &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
+        "velocity_target"));
+
     // create timer,
     rcl_timer_t timer;
     const unsigned int timer_timeout = 20;
@@ -158,8 +175,16 @@ void micro_ros_task(void *arg)
 
     // create executor
     rclc_executor_t executor;
-    RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
+    RCCHECK(rclc_executor_init(&executor, &support.context, 2, &allocator));
     RCCHECK(rclc_executor_add_timer(&executor, &timer));
+
+    // add subscriber to executor
+    RCCHECK(rclc_executor_add_subscription(
+        &executor,
+        &velocity_subscriber,
+        &velocity_msg,
+        velocity_subscriber_callback,
+        ON_NEW_DATA));
 
     msg.data = 0.0f;
 
@@ -196,8 +221,6 @@ void app_main(void)
 
     esp_log_level_set("pid", ESP_LOG_DEBUG);
 
-    actuator.velocity_target = 0.5;
-
     stepper_init(
         &actuator.stepper,
         STEP_PIN,
@@ -226,6 +249,8 @@ void app_main(void)
     hall_init();
 
     home(&actuator.stepper, &actuator.as5600);
+
+    actuator.velocity_target = 0.0f;
 
     xTaskCreatePinnedToCore(
         micro_ros_task,
