@@ -219,8 +219,9 @@ void app_main(void)
 #error micro-ROS transports misconfigured
 #endif // RMW_UXRCE_TRANSPORT_CUSTOM
 
-    esp_log_level_set("pid", ESP_LOG_DEBUG);
-    esp_log_level_set("stepper", ESP_LOG_WARN);
+    esp_log_level_set("pid", ESP_LOG_INFO);
+    esp_log_level_set("stepper", ESP_LOG_INFO);
+    esp_log_level_set("as5600", ESP_LOG_INFO);
 
     stepper_init(
         &actuator.stepper,

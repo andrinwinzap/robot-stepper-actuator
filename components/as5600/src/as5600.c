@@ -28,7 +28,7 @@ static uint8_t read_8_bit(const as5600_t *as5600, uint8_t reg)
     uint8_t b;
     if (i2c_read_reg(as5600, reg, &b, 1) != ESP_OK)
     {
-        ESP_LOGW(TAG, "I2C read_8_bit failed");
+        ESP_LOGE(TAG, "I2C read_8_bit failed");
         return 0xFF;
     }
     return b;
@@ -39,7 +39,7 @@ static uint16_t read_12_bit(const as5600_t *as5600, uint8_t reg)
     uint8_t buf[2];
     if (i2c_read_reg(as5600, reg, buf, 2) != ESP_OK)
     {
-        ESP_LOGW(TAG, "I2C read_12_bit failed");
+        ESP_LOGE(TAG, "I2C read_12_bit failed");
         return 0;
     }
     return ((uint16_t)buf[0] << 8 | buf[1]) & 0x0FFF;
@@ -61,6 +61,8 @@ bool as5600_init(as5600_t *as5600, i2c_port_t i2c_port, uint8_t address, float a
     as5600->position = 0;
     as5600->velocity = 0;
 
+    ESP_LOGI(TAG, "Initializing AS5600: addr=0x%02X, alpha=%.3f, deadband=%.5f, scale=%.3f", address, alpha, deadband, scale_factor);
+
     uint8_t status = read_8_bit(as5600, AS5600_REG_STATUS);
     if (status == 0xFF)
     {
@@ -69,12 +71,17 @@ bool as5600_init(as5600_t *as5600, i2c_port_t i2c_port, uint8_t address, float a
     }
     if ((status & (1 << 5)) == 0)
     {
-        ESP_LOGE(TAG, "AS5600 magnet not detected");
+        ESP_LOGE(TAG, "AS5600 magnet not detected (status=0x%02X)", status);
         return false;
     }
 
+    ESP_LOGI(TAG, "AS5600 magnet detected (status=0x%02X)", status);
+
     as5600->raw_angle = get_raw_angle(as5600);
     as5600->last_time_us = esp_timer_get_time();
+
+    ESP_LOGI(TAG, "AS5600 init done. Initial angle: %.6f rad", as5600->raw_angle);
+
     return true;
 }
 
@@ -110,6 +117,7 @@ void as5600_set_position(as5600_t *as5600, float angle)
 {
     as5600->position = angle * as5600->scale_factor;
     as5600->raw_angle = get_raw_angle(as5600);
+    ESP_LOGI(TAG, "Set position to %.6f rad (scaled: %.6f)", angle, as5600->position);
 }
 
 float as5600_get_position(const as5600_t *as5600)

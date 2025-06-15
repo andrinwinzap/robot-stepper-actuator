@@ -61,7 +61,7 @@ void stepper_init(stepper_t *stepper,
     ESP_ERROR_CHECK(gptimer_register_event_callbacks(stepper->timer, &callbacks, stepper));
     ESP_ERROR_CHECK(gptimer_enable(stepper->timer));
 
-    ESP_LOGD(TAG, "Stepper initialized: step_pin=%d dir_pin=%d en_pin=%d", step_pin, dir_pin, en_pin);
+    ESP_LOGI(TAG, "Stepper initialized: step_pin=%d dir_pin=%d en_pin=%d", step_pin, dir_pin, en_pin);
 }
 
 void stepper_enable(const stepper_t *stepper)
@@ -81,7 +81,6 @@ void stepper_set_velocity(stepper_t *stepper, float rad_per_sec)
     if (!stepper->timer)
         return;
 
-    ESP_LOGD(TAG, "Diff: %f", fabs(rad_per_sec - stepper->velocity));
     if (fabs(rad_per_sec - stepper->velocity) < STEPPER_SPEED_CHANGE_THRESHOLD)
         return;
 
