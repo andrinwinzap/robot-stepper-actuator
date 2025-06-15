@@ -45,8 +45,8 @@
         }                                                                                  \
     }
 
-rcl_publisher_t publisher;
-std_msgs__msg__Float32 msg;
+rcl_publisher_t joint_position_publisher;
+std_msgs__msg__Float32 joint_position_msg;
 
 rcl_subscription_t velocity_subscriber;
 std_msgs__msg__Float32 velocity_msg;
@@ -144,8 +144,8 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
         RCSOFTCHECK(rcl_publish(&homed_publisher, &homed_msg, NULL));
 
         // Publish joint position
-        msg.data = get_joint_position();
-        RCSOFTCHECK(rcl_publish(&publisher, &msg, NULL));
+        joint_position_msg.data = get_joint_position();
+        RCSOFTCHECK(rcl_publish(&joint_position_publisher, &joint_position_msg, NULL));
     }
 }
 
@@ -169,7 +169,7 @@ void micro_ros_task(void *arg)
 
     // create publisher
     RCCHECK(rclc_publisher_init_default(
-        &publisher,
+        &joint_position_publisher,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
         "position"));
@@ -204,7 +204,7 @@ void micro_ros_task(void *arg)
         velocity_subscriber_callback,
         ON_NEW_DATA));
 
-    msg.data = 0.0f;
+    joint_position_msg.data = 0.0f;
 
     while (1)
     {
@@ -213,7 +213,7 @@ void micro_ros_task(void *arg)
     }
 
     // free resources
-    RCCHECK(rcl_publisher_fini(&publisher, &node));
+    RCCHECK(rcl_publisher_fini(&joint_position_publisher, &node));
     RCCHECK(rcl_node_fini(&node));
 
     vTaskDelete(NULL);
