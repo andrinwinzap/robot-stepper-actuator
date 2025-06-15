@@ -6,6 +6,8 @@
 #include <math.h>
 #include <stdlib.h>
 
+static const char *TAG = "stepper";
+
 static bool IRAM_ATTR timer_callback(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
 {
     stepper_t *stepper = (stepper_t *)user_data;
@@ -55,16 +57,20 @@ void stepper_init(stepper_t *stepper,
     };
     ESP_ERROR_CHECK(gptimer_register_event_callbacks(stepper->timer, &callbacks, stepper));
     ESP_ERROR_CHECK(gptimer_enable(stepper->timer));
+
+    ESP_LOGD(TAG, "Stepper initialized: step_pin=%d dir_pin=%d en_pin=%d", step_pin, dir_pin, en_pin);
 }
 
 void stepper_enable(const stepper_t *stepper)
 {
     gpio_set_level(stepper->en_pin, 0);
+    ESP_LOGD(TAG, "Stepper enabled");
 }
 
 void stepper_disable(const stepper_t *stepper)
 {
     gpio_set_level(stepper->en_pin, 1);
+    ESP_LOGD(TAG, "Stepper disabled");
 }
 
 void stepper_set_velocity(stepper_t *stepper, float rad_per_sec)
@@ -76,11 +82,13 @@ void stepper_set_velocity(stepper_t *stepper, float rad_per_sec)
     {
         gptimer_stop(stepper->timer);
         stepper->running = false;
+        ESP_LOGD(TAG, "Stopped previous motion");
     }
 
     if (rad_per_sec == 0)
     {
         gpio_set_level(stepper->step_pin, 0);
+        ESP_LOGD(TAG, "Velocity is zero, motor idle");
         return;
     }
 
@@ -100,4 +108,7 @@ void stepper_set_velocity(stepper_t *stepper, float rad_per_sec)
     ESP_ERROR_CHECK(gptimer_set_alarm_action(stepper->timer, &alarm_config));
     ESP_ERROR_CHECK(gptimer_start(stepper->timer));
     stepper->running = true;
+
+    ESP_LOGD(TAG, "Set velocity: %.2f rad/s -> %lld steps/s (us/step: %llu) dir: %s",
+             rad_per_sec, steps_per_sec, us_per_step, rad_per_sec > 0 ? "CW" : "CCW");
 }
