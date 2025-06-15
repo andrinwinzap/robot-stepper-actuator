@@ -13,10 +13,10 @@
 #define STEPS_PER_REV 200
 #define MICROSTEPS 8
 
-#define SPEED_FILTER_ALPHA 0.5f
+#define SPEED_FILTER_ALPHA 0.1f
 #define SPEED_DEADBAND 0.01f
 
-#define KP 0.1f
+#define KP 0.0f
 #define KI 0.0f
 #define KD 0.0f
 #define KF 1.0f
