@@ -222,6 +222,7 @@ void app_main(void)
     esp_log_level_set("pid", ESP_LOG_INFO);
     esp_log_level_set("stepper", ESP_LOG_INFO);
     esp_log_level_set("as5600", ESP_LOG_INFO);
+    esp_log_level_set("homing", ESP_LOG_INFO);
 
     stepper_init(
         &actuator.stepper,
