@@ -11,6 +11,7 @@
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
 #include <std_msgs/msg/float32.h>
+#include <std_msgs/msg/bool.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
 
@@ -49,6 +50,11 @@ std_msgs__msg__Float32 msg;
 
 rcl_subscription_t velocity_subscriber;
 std_msgs__msg__Float32 velocity_msg;
+
+rcl_publisher_t homed_publisher;
+std_msgs__msg__Bool homed_msg;
+
+volatile bool is_homed = false;
 
 static const char *TAG = "Actuator";
 
@@ -133,6 +139,11 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
     RCLC_UNUSED(last_call_time);
     if (timer != NULL)
     {
+        // Publish homed status
+        homed_msg.data = is_homed;
+        RCSOFTCHECK(rcl_publish(&homed_publisher, &homed_msg, NULL));
+
+        // Publish joint position
         msg.data = get_joint_position();
         RCSOFTCHECK(rcl_publish(&publisher, &msg, NULL));
     }
@@ -149,6 +160,12 @@ void micro_ros_task(void *arg)
     // create node
     rcl_node_t node;
     RCCHECK(rclc_node_init_default(&node, "esp32_float32_publisher", "", &support));
+
+    RCCHECK(rclc_publisher_init_default(
+        &homed_publisher,
+        &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool),
+        "homed"));
 
     // create publisher
     RCCHECK(rclc_publisher_init_default(
@@ -208,6 +225,11 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "Starting Setup...");
 
+    esp_log_level_set("pid", ESP_LOG_INFO);
+    esp_log_level_set("stepper", ESP_LOG_INFO);
+    esp_log_level_set("as5600", ESP_LOG_INFO);
+    esp_log_level_set("homing", ESP_LOG_INFO);
+
 #if defined(RMW_UXRCE_TRANSPORT_CUSTOM)
     rmw_uros_set_custom_transport(
         true,
@@ -220,10 +242,16 @@ void app_main(void)
 #error micro-ROS transports misconfigured
 #endif // RMW_UXRCE_TRANSPORT_CUSTOM
 
-    esp_log_level_set("pid", ESP_LOG_INFO);
-    esp_log_level_set("stepper", ESP_LOG_INFO);
-    esp_log_level_set("as5600", ESP_LOG_INFO);
-    esp_log_level_set("homing", ESP_LOG_INFO);
+    xTaskCreatePinnedToCore(
+        micro_ros_task,
+        "uros_task",
+        16000,
+        NULL,
+        5,
+        NULL,
+        0);
+
+    actuator.velocity_target = 0.0f;
 
     stepper_init(
         &actuator.stepper,
@@ -253,17 +281,7 @@ void app_main(void)
     hall_init();
 
     home(&actuator.stepper, &actuator.as5600);
-
-    actuator.velocity_target = 0.0f;
-
-    xTaskCreatePinnedToCore(
-        micro_ros_task,
-        "uros_task",
-        16000,
-        NULL,
-        5,
-        NULL,
-        0);
+    is_homed = true;
 
     xTaskCreatePinnedToCore(
         control_loop_task,
