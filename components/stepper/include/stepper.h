@@ -16,6 +16,7 @@ typedef struct
     gptimer_handle_t timer;
     volatile bool step_level;
     bool running;
+    float velocity;
 } stepper_t;
 
 void stepper_init(stepper_t *stepper,

@@ -6,6 +6,8 @@
 #include <math.h>
 #include <stdlib.h>
 
+#define STEPPER_SPEED_CHANGE_THRESHOLD 1e-3
+
 static const char *TAG = "stepper";
 
 static bool IRAM_ATTR timer_callback(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
@@ -32,6 +34,7 @@ void stepper_init(stepper_t *stepper,
     stepper->microsteps = microsteps;
     stepper->step_level = false;
     stepper->running = false;
+    stepper->velocity = 0.0f;
 
     gpio_config_t io_conf = {
         .mode = GPIO_MODE_OUTPUT,
@@ -78,11 +81,17 @@ void stepper_set_velocity(stepper_t *stepper, float rad_per_sec)
     if (!stepper->timer)
         return;
 
+    ESP_LOGD(TAG, "Diff: %f", fabs(rad_per_sec - stepper->velocity));
+    if (fabs(rad_per_sec - stepper->velocity) < STEPPER_SPEED_CHANGE_THRESHOLD)
+        return;
+
+    stepper->velocity = rad_per_sec;
+
     if (stepper->running)
     {
         gptimer_stop(stepper->timer);
         stepper->running = false;
-        ESP_LOGD(TAG, "Stopped previous motion");
+        ESP_LOGD(TAG, "Stopped timer");
     }
 
     if (rad_per_sec == 0)
