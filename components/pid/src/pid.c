@@ -11,6 +11,8 @@ void pid_init(pid_controller_t *pid, float kp, float ki, float kd, float kf)
     pid->kf = kf;
     pid->integral = 0.0f;
     pid->prev_error = 0.0f;
+
+    ESP_LOGI(TAG, "PID initialized: kp=%.4f, ki=%.4f, kd=%.4f, kf=%.4f", kp, ki, kd, kf);
 }
 
 float pid_update(pid_controller_t *pid, float target, float measured, float dt)
