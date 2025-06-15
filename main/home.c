@@ -51,7 +51,8 @@ void home(stepper_t *stepper, as5600_t *as5600)
                 }
                 else if (now - hall_trigger_timestamp >= 50)
                 {
-                    stepper_enable(stepper);
+                    if (!stepper->running)
+                        stepper_enable(stepper);
                 }
             }
             else if (hall_trigger_timestamp != 0)
