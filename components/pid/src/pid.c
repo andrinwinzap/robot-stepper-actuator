@@ -25,7 +25,7 @@ float pid_update(pid_controller_t *pid, float target, float measured, float dt)
                    pid->ki * pid->integral +
                    pid->kd * derivative;
 
-    ESP_LOGV(TAG, "target: %f, measured: %f, error: %f, output: %f", target, measured, error, output);
+    ESP_LOGD(TAG, "target: %f, measured: %f, error: %f, output: %f", target, measured, error, output);
 
     return output;
 }
