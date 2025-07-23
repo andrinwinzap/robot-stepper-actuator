@@ -26,7 +26,7 @@ void home(stepper_t *stepper, as5600_t *as5600)
     {
         as5600_update(as5600);
         now = xTaskGetTickCount() * portTICK_PERIOD_MS;
-        hall_triggered = (gpio_get_level(GPIO_NUM_23) == 0);
+        hall_triggered = (gpio_get_level(GPIO_NUM_8) == 0);
 
         float pos = as5600_get_position(as5600);
         ESP_LOGV(TAG, "State: %d, Position: %.4f, Hall: %s", state, pos, hall_triggered ? "TRIGGERED" : "not triggered");

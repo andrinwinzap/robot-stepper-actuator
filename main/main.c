@@ -95,7 +95,7 @@ void i2c_init(void)
 void hall_init(void)
 {
     gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << GPIO_NUM_23),
+        .pin_bit_mask = (1ULL << GPIO_NUM_8),
         .mode = GPIO_MODE_INPUT,
         .pull_up_en = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -219,7 +219,7 @@ void micro_ros_task(void *arg)
     vTaskDelete(NULL);
 }
 
-static size_t uart_port = UART_NUM_1;
+static size_t uart_port = UART_NUM_0;
 
 void app_main(void)
 {

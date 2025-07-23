@@ -1,13 +1,13 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#define I2C_SDA_GPIO 21
-#define I2C_SCL_GPIO 22
+#define I2C_SDA_GPIO 18
+#define I2C_SCL_GPIO 17
 #define I2C_PORT I2C_NUM_0
 
-#define STEP_PIN GPIO_NUM_17
-#define DIR_PIN GPIO_NUM_16
-#define EN_PIN GPIO_NUM_4
+#define STEP_PIN GPIO_NUM_4
+#define DIR_PIN GPIO_NUM_5
+#define EN_PIN GPIO_NUM_6
 
 #define GEAR_RATIO 13.0f
 #define STEPS_PER_REV 200
