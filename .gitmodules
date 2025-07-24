@@ -4,3 +4,6 @@
 [submodule "components/as5600"]
 	path = components/as5600
 	url = https://github.com/andrinwinzap/as5600_espidf_component.git
+[submodule "components/pid"]
+	path = components/pid
+	url = https://github.com/andrinwinzap/pid_espidf_component.git
