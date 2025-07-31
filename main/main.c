@@ -27,25 +27,9 @@
 #include "stepper.h"
 #include "pid.h"
 #include "home.h"
-#include "config.h"
 
-#define RCCHECK(fn)                                                                      \
-    {                                                                                    \
-        rcl_ret_t temp_rc = fn;                                                          \
-        if ((temp_rc != RCL_RET_OK))                                                     \
-        {                                                                                \
-            printf("Failed status on line %d: %d. Aborting.\n", __LINE__, (int)temp_rc); \
-            vTaskDelete(NULL);                                                           \
-        }                                                                                \
-    }
-#define RCSOFTCHECK(fn)                                                                    \
-    {                                                                                      \
-        rcl_ret_t temp_rc = fn;                                                            \
-        if ((temp_rc != RCL_RET_OK))                                                       \
-        {                                                                                  \
-            printf("Failed status on line %d: %d. Continuing.\n", __LINE__, (int)temp_rc); \
-        }                                                                                  \
-    }
+#include "macros.h"
+#include "config.h"
 
 rcl_publisher_t position_publisher;
 std_msgs__msg__Float32 position_publisher_msg;
@@ -121,7 +105,7 @@ float actuator_get_position(void)
     return as5600_get_position(&actuator.as5600);
 }
 
-void control_loop_task(void *param)
+void pid_loop_task(void *param)
 {
     target_provider_t get_target = (target_provider_t)param;
     float dt_ms = 1000 / CONTROL_LOOP_FREQUENCY;
@@ -292,7 +276,7 @@ void app_main(void)
     is_homed = true;
 
     xTaskCreatePinnedToCore(
-        control_loop_task,
+        pid_loop_task,
         "control_loop",
         8000,
         (void *)get_position_ctrl,

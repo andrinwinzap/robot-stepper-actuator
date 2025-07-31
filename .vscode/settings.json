@@ -12,7 +12,8 @@
     "IDF_TARGET": "esp32s3"
   },
   "files.associations": {
-    "config.h": "c"
+    "config.h": "c",
+    "gpio.h": "c"
   },
   "idf.flashType": "JTAG"
 }
