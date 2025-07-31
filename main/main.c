@@ -116,7 +116,7 @@ float get_position_ctrl(void)
     return actuator.position_ctrl;
 }
 
-float get_joint_position(void)
+float actuator_get_position(void)
 {
     return as5600_get_position(&actuator.as5600);
 }
@@ -145,7 +145,7 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
     RCLC_UNUSED(last_call_time);
     if (timer != NULL)
     {
-        position_publisher_msg.data = get_joint_position();
+        position_publisher_msg.data = actuator_get_position();
         RCSOFTCHECK(rcl_publish(&position_publisher, &position_publisher_msg, NULL));
     }
 }
@@ -160,7 +160,7 @@ void micro_ros_task(void *arg)
 
     // create node
     rcl_node_t node;
-    RCCHECK(rclc_node_init_default(&node, "joint", "", &support));
+    RCCHECK(rclc_node_init_default(&node, "actuator", "", &support));
 
     // create publisher
     RCCHECK(rclc_publisher_init_default(
