@@ -19,8 +19,6 @@
 #include <rmw_microros/rmw_microros.h>
 #include "esp32_serial_transport.h"
 
-#include "nvs_flash.h"
-
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "as5600.h"
@@ -245,23 +243,15 @@ void app_main(void)
 
     i2c_init();
 
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
-    {
-        ESP_LOGW(TAG, "NVS partition truncated or new version found, erasing...");
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-    ESP_LOGI(TAG, "NVS initialized successfully");
-
     as5600_init(
         &actuator.as5600,
         I2C_PORT,
         AS5600_DEFAULT_ADDR,
         SPEED_FILTER_ALPHA,
         SPEED_DEADBAND,
-        GEAR_RATIO, 1);
+        GEAR_RATIO,
+        1,
+        false);
 
     pid_init(
         &actuator.pid,
