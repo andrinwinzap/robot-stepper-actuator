@@ -1,6 +1,6 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
-  "idf.espIdfPath": "/home/andrin/esp/v5.4.1/esp-idf",
+  "idf.espIdfPath": "/home/andrin/esp/v5.2/esp-idf",
   "idf.pythonInstallPath": "/usr/bin/python",
   "idf.openOcdConfigs": [
     "interface/ftdi/esp32_devkitj_v1.cfg",

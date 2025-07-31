@@ -19,6 +19,8 @@
 #include <rmw_microros/rmw_microros.h>
 #include "esp32_serial_transport.h"
 
+#include "nvs_flash.h"
+
 #include "driver/gpio.h"
 #include "driver/i2c.h"
 #include "as5600.h"
@@ -45,14 +47,11 @@
         }                                                                                  \
     }
 
-rcl_publisher_t joint_position_publisher;
-std_msgs__msg__Float32 joint_position_msg;
+rcl_publisher_t position_publisher;
+std_msgs__msg__Float32 position_publisher_msg;
 
-rcl_subscription_t velocity_subscriber;
-std_msgs__msg__Float32 velocity_msg;
-
-rcl_publisher_t homed_publisher;
-std_msgs__msg__Bool homed_msg;
+rcl_subscription_t position_subscriber;
+std_msgs__msg__Float32 position_subscriber_msg;
 
 volatile bool is_homed = false;
 
@@ -65,16 +64,24 @@ typedef struct
     stepper_t stepper;
     as5600_t as5600;
     pid_controller_t pid;
-    volatile float velocity_target;
+    volatile float position_ctrl;
 } actuator_t;
 
 actuator_t actuator;
 
-void velocity_subscriber_callback(const void *msgin)
+void position_subscriber_callback(const void *msgin)
 {
     const std_msgs__msg__Float32 *msg = (const std_msgs__msg__Float32 *)msgin;
-    actuator.velocity_target = msg->data;
-    ESP_LOGI(TAG, "Received new velocity target: %f", msg->data);
+    float pos = msg->data;
+    if (pos > ACTUATOR_MAX)
+    {
+        pos = ACTUATOR_MAX;
+    }
+    else if (pos < ACTUATOR_MIN)
+    {
+        pos = ACTUATOR_MIN;
+    }
+    actuator.position_ctrl = pos;
 }
 
 void i2c_init(void)
@@ -104,9 +111,9 @@ void hall_init(void)
     gpio_config(&io_conf);
 }
 
-float get_velocity_target(void)
+float get_position_ctrl(void)
 {
-    return actuator.velocity_target;
+    return actuator.position_ctrl;
 }
 
 float get_joint_position(void)
@@ -117,16 +124,15 @@ float get_joint_position(void)
 void control_loop_task(void *param)
 {
     target_provider_t get_target = (target_provider_t)param;
-    float dt_s = 1.0f / CONTROL_LOOP_FREQUENCY;
     float dt_ms = 1000 / CONTROL_LOOP_FREQUENCY;
 
     for (;;)
     {
         as5600_update(&actuator.as5600);
 
-        float measured = as5600_get_velocity(&actuator.as5600);
-        float target = get_target();
-        float control_signal = pid_update(&actuator.pid, target, measured, dt_s);
+        float feedback = as5600_get_position(&actuator.as5600);
+        float setpoint = get_target();
+        float control_signal = pid_update(&actuator.pid, setpoint, feedback);
 
         stepper_set_velocity(&actuator.stepper, control_signal);
 
@@ -139,13 +145,8 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
     RCLC_UNUSED(last_call_time);
     if (timer != NULL)
     {
-        // Publish homed status
-        homed_msg.data = is_homed;
-        RCSOFTCHECK(rcl_publish(&homed_publisher, &homed_msg, NULL));
-
-        // Publish joint position
-        joint_position_msg.data = get_joint_position();
-        RCSOFTCHECK(rcl_publish(&joint_position_publisher, &joint_position_msg, NULL));
+        position_publisher_msg.data = get_joint_position();
+        RCSOFTCHECK(rcl_publish(&position_publisher, &position_publisher_msg, NULL));
     }
 }
 
@@ -161,25 +162,19 @@ void micro_ros_task(void *arg)
     rcl_node_t node;
     RCCHECK(rclc_node_init_default(&node, "joint", "", &support));
 
-    RCCHECK(rclc_publisher_init_default(
-        &homed_publisher,
-        &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool),
-        "homed"));
-
     // create publisher
     RCCHECK(rclc_publisher_init_default(
-        &joint_position_publisher,
+        &position_publisher,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
-        "position"));
+        "/position"));
 
     // create subscriber
     RCCHECK(rclc_subscription_init_default(
-        &velocity_subscriber,
+        &position_subscriber,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
-        "velocity_target"));
+        "/position_ctrl"));
 
     // create timer,
     rcl_timer_t timer;
@@ -199,12 +194,12 @@ void micro_ros_task(void *arg)
     // add subscriber to executor
     RCCHECK(rclc_executor_add_subscription(
         &executor,
-        &velocity_subscriber,
-        &velocity_msg,
-        velocity_subscriber_callback,
+        &position_subscriber,
+        &position_subscriber_msg,
+        position_subscriber_callback,
         ON_NEW_DATA));
 
-    joint_position_msg.data = 0.0f;
+    position_publisher_msg.data = 0.0f;
 
     while (1)
     {
@@ -213,13 +208,13 @@ void micro_ros_task(void *arg)
     }
 
     // free resources
-    RCCHECK(rcl_publisher_fini(&joint_position_publisher, &node));
+    RCCHECK(rcl_publisher_fini(&position_publisher, &node));
     RCCHECK(rcl_node_fini(&node));
 
     vTaskDelete(NULL);
 }
 
-static size_t uart_port = UART_NUM_0;
+static size_t uart_port = UART_NUM_1;
 
 void app_main(void)
 {
@@ -251,7 +246,7 @@ void app_main(void)
         NULL,
         0);
 
-    actuator.velocity_target = 0.0f;
+    actuator.position_ctrl = 0.0f;
 
     stepper_init(
         &actuator.stepper,
@@ -263,20 +258,31 @@ void app_main(void)
         MICROSTEPS);
 
     i2c_init();
+
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND)
+    {
+        ESP_LOGW(TAG, "NVS partition truncated or new version found, erasing...");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+    ESP_LOGI(TAG, "NVS initialized successfully");
+
     as5600_init(
         &actuator.as5600,
         I2C_PORT,
         AS5600_DEFAULT_ADDR,
         SPEED_FILTER_ALPHA,
         SPEED_DEADBAND,
-        GEAR_RATIO);
+        GEAR_RATIO, 1);
 
     pid_init(
         &actuator.pid,
         KP,
         KI,
         KD,
-        KF);
+        1.0f / CONTROL_LOOP_FREQUENCY);
 
     hall_init();
 
@@ -287,7 +293,7 @@ void app_main(void)
         control_loop_task,
         "control_loop",
         8000,
-        (void *)get_velocity_target,
+        (void *)get_position_ctrl,
         10,
         NULL,
         1);

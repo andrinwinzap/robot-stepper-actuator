@@ -13,13 +13,16 @@
 #define STEPS_PER_REV 200
 #define MICROSTEPS 8
 
+#define ACTUATOR_MAX 3.14
+#define ACTUATOR_MIN -3.14
+
 #define SPEED_FILTER_ALPHA 0.1f
 #define SPEED_DEADBAND 0.01f
 
-#define KP 0.0f
+#define KP 1.0f
 #define KI 0.0f
 #define KD 0.0f
-#define KF 1.0f
+#define KF 0.0f
 
 #define CONTROL_LOOP_FREQUENCY 100
 
