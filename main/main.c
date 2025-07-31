@@ -255,7 +255,9 @@ void app_main(void)
         EN_PIN,
         GEAR_RATIO,
         STEPS_PER_REV,
-        MICROSTEPS);
+        MICROSTEPS,
+        MAX_SPEED,
+        MAX_ACCELERATION);
 
     i2c_init();
 

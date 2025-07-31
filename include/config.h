@@ -15,6 +15,8 @@
 
 #define ACTUATOR_MAX 3.14
 #define ACTUATOR_MIN -3.14
+#define MAX_SPEED 6.28
+#define MAX_ACCELERATION 3.14
 
 #define SPEED_FILTER_ALPHA 0.1f
 #define SPEED_DEADBAND 0.01f
