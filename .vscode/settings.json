@@ -15,5 +15,5 @@
     "config.h": "c",
     "gpio.h": "c"
   },
-  "idf.flashType": "JTAG"
+  "idf.flashType": "UART"
 }
