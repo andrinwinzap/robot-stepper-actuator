@@ -239,7 +239,8 @@ void app_main(void)
         STEPS_PER_REV,
         MICROSTEPS,
         MAX_SPEED,
-        MAX_ACCELERATION);
+        MAX_ACCELERATION,
+        INVERT_STEPPER);
 
     pid_init(
         &actuator.pid,

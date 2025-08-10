@@ -27,7 +27,8 @@ void stepper_init(stepper_t *stepper,
                   uint16_t steps_per_rev,
                   uint8_t microsteps,
                   float max_velocity,
-                  float max_acceleration)
+                  float max_acceleration,
+                  bool invert_direction)
 {
     stepper->step_pin = step_pin;
     stepper->dir_pin = dir_pin;
@@ -40,6 +41,7 @@ void stepper_init(stepper_t *stepper,
     stepper->velocity = 0.0f;
     stepper->max_velocity = max_velocity;
     stepper->max_acceleration = max_acceleration;
+    stepper->invert_direction = invert_direction;
     stepper->last_update_us = esp_timer_get_time();
 
     gpio_config_t io_conf = {
@@ -128,7 +130,12 @@ void stepper_set_velocity(stepper_t *stepper, float target_velocity)
         steps_per_sec = 1;
 
     uint64_t us_per_step = 500000ULL / llabs(steps_per_sec);
-    gpio_set_level(stepper->dir_pin, target_velocity > 0 ? 0 : 1);
+    bool dir_level = (target_velocity > 0) ? 0 : 1;
+    if (stepper->invert_direction)
+    {
+        dir_level = !dir_level;
+    }
+    gpio_set_level(stepper->dir_pin, dir_level);
 
     gptimer_alarm_config_t alarm_config = {
         .reload_count = 0,

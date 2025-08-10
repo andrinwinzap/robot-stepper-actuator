@@ -13,6 +13,7 @@ typedef struct
     float gear_ratio;
     uint16_t steps_per_rev;
     uint8_t microsteps;
+    bool invert_direction;
 
     bool step_level;
     bool running;
@@ -32,7 +33,8 @@ void stepper_init(stepper_t *stepper,
                   uint16_t steps_per_rev,
                   uint8_t microsteps,
                   float max_velocity,
-                  float max_acceleration);
+                  float max_acceleration,
+                  bool invert_direction);
 void stepper_enable(const stepper_t *stepper);
 void stepper_disable(const stepper_t *stepper);
 void stepper_set_velocity(stepper_t *stepper, float rad_per_sec);
