@@ -32,14 +32,12 @@
 
 #define TOPIC_BUFFER_SIZE 64
 #define COMMAND_BUFFER_LEN 2
+#define STATE_BUFFER_LEN 2
 
-rcl_publisher_t position_publisher;
-std_msgs__msg__Float32 position_publisher_msg;
-char position_publisher_topic[TOPIC_BUFFER_SIZE];
-
-rcl_publisher_t velocity_publisher;
-std_msgs__msg__Float32 velocity_publisher_msg;
-char velocity_publisher_topic[TOPIC_BUFFER_SIZE];
+rcl_publisher_t state_publisher;
+std_msgs__msg__Float32MultiArray state_publisher_msg;
+char state_publisher_topic[TOPIC_BUFFER_SIZE];
+static float state_buffer[STATE_BUFFER_LEN];
 
 rcl_subscription_t command_subscriber;
 std_msgs__msg__Float32MultiArray command_subscriber_msg;
@@ -141,11 +139,9 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
     RCLC_UNUSED(last_call_time);
     if (timer != NULL)
     {
-        position_publisher_msg.data = actuator_get_position();
-        RCSOFTCHECK(rcl_publish(&position_publisher, &position_publisher_msg, NULL));
-
-        velocity_publisher_msg.data = as5600_get_velocity(&actuator.as5600);
-        RCSOFTCHECK(rcl_publish(&velocity_publisher, &velocity_publisher_msg, NULL));
+        state_publisher_msg.data.data[0] = actuator_get_position();
+        state_publisher_msg.data.data[1] = as5600_get_velocity(&actuator.as5600);
+        RCSOFTCHECK(rcl_publish(&state_publisher, &state_publisher_msg, NULL));
     }
 }
 
@@ -163,17 +159,15 @@ void micro_ros_task(void *arg)
 
     // create position publisher
     RCCHECK(rclc_publisher_init_default(
-        &position_publisher,
+        &state_publisher,
         &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
-        position_publisher_topic));
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+        state_publisher_topic));
 
-    // create velocity publisher
-    RCCHECK(rclc_publisher_init_default(
-        &velocity_publisher,
-        &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
-        velocity_publisher_topic));
+    std_msgs__msg__Float32MultiArray__init(&state_publisher_msg);
+    state_publisher_msg.data.data = state_buffer;
+    state_publisher_msg.data.capacity = STATE_BUFFER_LEN;
+    state_publisher_msg.data.size = STATE_BUFFER_LEN;
 
     // create subscriber
     RCCHECK(rclc_subscription_init_default(
@@ -182,7 +176,6 @@ void micro_ros_task(void *arg)
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
         command_subscriber_topic));
 
-    std_msgs__msg__Float32MultiArray__init(&command_subscriber_msg);
     std_msgs__msg__Float32MultiArray__init(&command_subscriber_msg);
     command_subscriber_msg.data.data = command_buffer;
     command_subscriber_msg.data.capacity = COMMAND_BUFFER_LEN;
@@ -211,8 +204,8 @@ void micro_ros_task(void *arg)
         command_subscriber_callback,
         ON_NEW_DATA));
 
-    position_publisher_msg.data = 0.0f;
-    velocity_publisher_msg.data = 0.0f;
+    state_publisher_msg.data.data[0] = 0.0f;
+    state_publisher_msg.data.data[1] = 0.0f;
 
     while (1)
     {
@@ -220,8 +213,7 @@ void micro_ros_task(void *arg)
     }
 
     // free resources
-    RCCHECK(rcl_publisher_fini(&position_publisher, &node));
-    RCCHECK(rcl_publisher_fini(&velocity_publisher, &node));
+    RCCHECK(rcl_publisher_fini(&state_publisher, &node));
     RCCHECK(rcl_node_fini(&node));
 
     vTaskDelete(NULL);
@@ -233,8 +225,7 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "Starting Setup...");
 
-    snprintf(position_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_position", robot_name, joint_name);
-    snprintf(velocity_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_velocity", robot_name, joint_name);
+    snprintf(state_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_state", robot_name, joint_name);
     snprintf(command_subscriber_topic, TOPIC_BUFFER_SIZE, "/%s/%s/send_command", robot_name, joint_name);
 
     i2c_bus_init(I2C_PORT,
