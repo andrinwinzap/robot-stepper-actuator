@@ -183,7 +183,7 @@ void micro_ros_task(void *arg)
 
     // create timer,
     rcl_timer_t timer;
-    const unsigned int timer_timeout = 100;
+    const unsigned int timer_timeout = 20;
     RCCHECK(rclc_timer_init_default2(
         &timer,
         &support,
@@ -207,10 +207,7 @@ void micro_ros_task(void *arg)
     state_publisher_msg.data.data[0] = 0.0f;
     state_publisher_msg.data.data[1] = 0.0f;
 
-    while (1)
-    {
-        rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
-    }
+    rclc_executor_spin(&executor);
 
     // free resources
     RCCHECK(rcl_publisher_fini(&state_publisher, &node));
