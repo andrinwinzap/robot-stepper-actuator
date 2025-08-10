@@ -8,6 +8,7 @@
 #include "esp_timer.h"
 
 #define STEPPER_SPEED_CHANGE_THRESHOLD 1e-3
+#define FREQUENCY_THRESHOLD 10
 
 static const char *TAG = "stepper";
 
@@ -118,16 +119,14 @@ void stepper_set_velocity(stepper_t *stepper, float target_velocity)
         ESP_LOGD(TAG, "Stopped timer");
     }
 
-    if (target_velocity == 0.0f)
+    int32_t steps_per_sec = target_velocity * (stepper->gear_ratio * stepper->steps_per_rev * stepper->microsteps) / (2 * M_PI);
+
+    if (labs(steps_per_sec) < FREQUENCY_THRESHOLD)
     {
         gpio_set_level(stepper->step_pin, 0);
         ESP_LOGD(TAG, "Velocity is zero, motor idle");
         return;
     }
-
-    int64_t steps_per_sec = target_velocity * (stepper->gear_ratio * stepper->steps_per_rev * stepper->microsteps) / (2 * M_PI);
-    if (steps_per_sec == 0)
-        steps_per_sec = 1;
 
     uint64_t us_per_step = 500000ULL / llabs(steps_per_sec);
     bool dir_level = (target_velocity > 0) ? 0 : 1;
@@ -147,6 +146,6 @@ void stepper_set_velocity(stepper_t *stepper, float target_velocity)
     ESP_ERROR_CHECK(gptimer_start(stepper->timer));
     stepper->running = true;
 
-    ESP_LOGD(TAG, "Set velocity: %.2f rad/s -> %lld steps/s (us/step: %llu) dir: %s",
+    ESP_LOGD(TAG, "Set velocity: %.2f rad/s -> %ld steps/s (us/step: %llu) dir: %s",
              target_velocity, steps_per_sec, us_per_step, target_velocity > 0 ? "CW" : "CCW");
 }
