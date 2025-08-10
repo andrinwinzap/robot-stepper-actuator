@@ -16,19 +16,18 @@
 
 #define ACTUATOR_MAX 3.14
 #define ACTUATOR_MIN -3.14
-#define MAX_SPEED 6.28
+#define MAX_SPEED 6.0
 #define MAX_ACCELERATION 3.14
-
 #define INVERT_AS5600 false
 #define SPEED_FILTER_ALPHA 0.1f
 #define SPEED_DEADBAND 0.01f
 
 #define HALL_EFFECT_SENSOR_PIN 8
 
-#define KP 1.0f
-#define KI 0.0f
-#define KD 0.0f
-#define KF 0.0f
+#define KP 6.0f
+#define KI 0.002f    
+#define KD 1.12f     
+#define KF 0.1f      
 
 #define CONTROL_LOOP_FREQUENCY 100
 

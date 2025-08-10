@@ -35,6 +35,10 @@ rcl_publisher_t position_publisher;
 std_msgs__msg__Float32 position_publisher_msg;
 char position_publisher_topic[TOPIC_BUFFER_SIZE];
 
+rcl_publisher_t velocity_publisher;
+std_msgs__msg__Float32 velocity_publisher_msg;
+char velocity_publisher_topic[TOPIC_BUFFER_SIZE];
+
 rcl_subscription_t position_subscriber;
 std_msgs__msg__Float32 position_subscriber_msg;
 char position_subscriber_topic[TOPIC_BUFFER_SIZE];
@@ -121,6 +125,9 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
     {
         position_publisher_msg.data = actuator_get_position();
         RCSOFTCHECK(rcl_publish(&position_publisher, &position_publisher_msg, NULL));
+        
+        velocity_publisher_msg.data = as5600_get_velocity(&actuator.as5600);
+        RCSOFTCHECK(rcl_publish(&velocity_publisher, &velocity_publisher_msg, NULL));
     }
 }
 
@@ -136,12 +143,19 @@ void micro_ros_task(void *arg)
     rcl_node_t node;
     RCCHECK(rclc_node_init_default(&node, "actuator", "", &support));
 
-    // create publisher
+    // create position publisher
     RCCHECK(rclc_publisher_init_default(
         &position_publisher,
         &node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
         position_publisher_topic));
+
+    // create velocity publisher
+    RCCHECK(rclc_publisher_init_default(
+        &velocity_publisher,
+        &node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
+        velocity_publisher_topic));
 
     // create subscriber
     RCCHECK(rclc_subscription_init_default(
@@ -174,6 +188,7 @@ void micro_ros_task(void *arg)
         ON_NEW_DATA));
 
     position_publisher_msg.data = 0.0f;
+    velocity_publisher_msg.data = 0.0f;
 
     while (1)
     {
@@ -183,18 +198,20 @@ void micro_ros_task(void *arg)
 
     // free resources
     RCCHECK(rcl_publisher_fini(&position_publisher, &node));
+    RCCHECK(rcl_publisher_fini(&velocity_publisher, &node));
     RCCHECK(rcl_node_fini(&node));
 
     vTaskDelete(NULL);
 }
 
-static size_t uart_port = UART_NUM_1;
+static size_t uart_port = UART_NUM_0;
 
 void app_main(void)
 {
     ESP_LOGI(TAG, "Starting Setup...");
 
     snprintf(position_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_position", robot_name, joint_name);
+    snprintf(velocity_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_velocity", robot_name, joint_name);
     snprintf(position_subscriber_topic, TOPIC_BUFFER_SIZE, "/%s/%s/set_position", robot_name, joint_name);
 
     i2c_bus_init(I2C_PORT,
