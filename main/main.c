@@ -13,6 +13,7 @@
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
 #include <std_msgs/msg/float32.h>
+#include <std_msgs/msg/float32_multi_array.h>
 #include <std_msgs/msg/bool.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
@@ -30,6 +31,7 @@
 #include "config.h"
 
 #define TOPIC_BUFFER_SIZE 64
+#define COMMAND_BUFFER_LEN 2
 
 rcl_publisher_t position_publisher;
 std_msgs__msg__Float32 position_publisher_msg;
@@ -39,9 +41,10 @@ rcl_publisher_t velocity_publisher;
 std_msgs__msg__Float32 velocity_publisher_msg;
 char velocity_publisher_topic[TOPIC_BUFFER_SIZE];
 
-rcl_subscription_t position_subscriber;
-std_msgs__msg__Float32 position_subscriber_msg;
-char position_subscriber_topic[TOPIC_BUFFER_SIZE];
+rcl_subscription_t command_subscriber;
+std_msgs__msg__Float32MultiArray command_subscriber_msg;
+char command_subscriber_topic[TOPIC_BUFFER_SIZE];
+static float command_buffer[COMMAND_BUFFER_LEN];
 
 static const char *TAG = "Actuator";
 
@@ -51,14 +54,22 @@ typedef struct
     as5600_t as5600;
     pid_controller_t pid;
     volatile float position_ctrl;
+    volatile float velocity_ctrl;
 } actuator_t;
 
 actuator_t actuator;
 
-void position_subscriber_callback(const void *msgin)
+void command_subscriber_callback(const void *msgin)
 {
-    const std_msgs__msg__Float32 *msg = (const std_msgs__msg__Float32 *)msgin;
-    float pos = msg->data;
+    const std_msgs__msg__Float32MultiArray *msg = (const std_msgs__msg__Float32MultiArray *)msgin;
+
+    if (msg->data.size < 2)
+    {
+        ESP_LOGW(TAG, "Received command with insufficient data size: %zu", msg->data.size);
+        return;
+    }
+
+    float pos = msg->data.data[0];
     if (pos > ACTUATOR_MAX)
     {
         pos = ACTUATOR_MAX;
@@ -68,6 +79,13 @@ void position_subscriber_callback(const void *msgin)
         pos = ACTUATOR_MIN;
     }
     actuator.position_ctrl = pos;
+
+    float vel = msg->data.data[1];
+    if (fabs(vel) > MAX_SPEED)
+    {
+        vel = MAX_SPEED;
+    }
+    actuator.velocity_ctrl = vel;
 }
 
 void i2c_bus_init(i2c_port_t i2c_num, gpio_num_t sda, gpio_num_t scl)
@@ -110,7 +128,7 @@ void pid_loop_task(void *param)
         as5600_update(&actuator.as5600);
 
         float feedback = as5600_get_position(&actuator.as5600);
-        float control_signal = pid_update(&actuator.pid, actuator.position_ctrl, feedback);
+        float control_signal = pid_update(&actuator.pid, actuator.position_ctrl, feedback, actuator.velocity_ctrl);
 
         stepper_set_velocity(&actuator.stepper, control_signal);
 
@@ -125,7 +143,7 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
     {
         position_publisher_msg.data = actuator_get_position();
         RCSOFTCHECK(rcl_publish(&position_publisher, &position_publisher_msg, NULL));
-        
+
         velocity_publisher_msg.data = as5600_get_velocity(&actuator.as5600);
         RCSOFTCHECK(rcl_publish(&velocity_publisher, &velocity_publisher_msg, NULL));
     }
@@ -159,14 +177,20 @@ void micro_ros_task(void *arg)
 
     // create subscriber
     RCCHECK(rclc_subscription_init_default(
-        &position_subscriber,
+        &command_subscriber,
         &node,
-        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32),
-        position_subscriber_topic));
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32MultiArray),
+        command_subscriber_topic));
+
+    std_msgs__msg__Float32MultiArray__init(&command_subscriber_msg);
+    std_msgs__msg__Float32MultiArray__init(&command_subscriber_msg);
+    command_subscriber_msg.data.data = command_buffer;
+    command_subscriber_msg.data.capacity = COMMAND_BUFFER_LEN;
+    command_subscriber_msg.data.size = 0;
 
     // create timer,
     rcl_timer_t timer;
-    const unsigned int timer_timeout = 20;
+    const unsigned int timer_timeout = 100;
     RCCHECK(rclc_timer_init_default2(
         &timer,
         &support,
@@ -182,9 +206,9 @@ void micro_ros_task(void *arg)
     // add subscriber to executor
     RCCHECK(rclc_executor_add_subscription(
         &executor,
-        &position_subscriber,
-        &position_subscriber_msg,
-        position_subscriber_callback,
+        &command_subscriber,
+        &command_subscriber_msg,
+        command_subscriber_callback,
         ON_NEW_DATA));
 
     position_publisher_msg.data = 0.0f;
@@ -192,8 +216,7 @@ void micro_ros_task(void *arg)
 
     while (1)
     {
-        rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
-        usleep(10000);
+        rclc_executor_spin_some(&executor, RCL_MS_TO_NS(10));
     }
 
     // free resources
@@ -204,7 +227,7 @@ void micro_ros_task(void *arg)
     vTaskDelete(NULL);
 }
 
-static size_t uart_port = UART_NUM_0;
+static size_t uart_port = UART_NUM_1;
 
 void app_main(void)
 {
@@ -212,7 +235,7 @@ void app_main(void)
 
     snprintf(position_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_position", robot_name, joint_name);
     snprintf(velocity_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_velocity", robot_name, joint_name);
-    snprintf(position_subscriber_topic, TOPIC_BUFFER_SIZE, "/%s/%s/set_position", robot_name, joint_name);
+    snprintf(command_subscriber_topic, TOPIC_BUFFER_SIZE, "/%s/%s/send_command", robot_name, joint_name);
 
     i2c_bus_init(I2C_PORT,
                  I2C_SDA_GPIO,
@@ -247,9 +270,11 @@ void app_main(void)
         KP,
         KI,
         KD,
+        KF,
         1.0f / CONTROL_LOOP_FREQUENCY);
 
     actuator.position_ctrl = 0.0f;
+    actuator.velocity_ctrl = 0.0f;
 
     home(&actuator.stepper, &actuator.as5600);
 
@@ -279,7 +304,7 @@ void app_main(void)
         "uros_task",
         16384,
         NULL,
-        5,
+        20,
         NULL,
         0);
 

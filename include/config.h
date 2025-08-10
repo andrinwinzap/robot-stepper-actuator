@@ -29,11 +29,11 @@
 #define KP 1.0f
 #define KI 0.0f
 #define KD 0.0f
-#define KF 0.0f
+#define KF 1.0f
 
 #define CONTROL_LOOP_FREQUENCY 100
 
 const char *robot_name = "robot";
-const char *joint_name = "joint_2";
+const char *joint_name = "joint_1";
 
 #endif // CONFIG_H
