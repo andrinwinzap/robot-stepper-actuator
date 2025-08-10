@@ -9,9 +9,9 @@
 #define STEP_PIN GPIO_NUM_4
 #define DIR_PIN GPIO_NUM_5
 #define EN_PIN GPIO_NUM_6
-#define INVERT_STEPPER true
+#define INVERT_STEPPER false
 
-#define GEAR_RATIO 15.0f
+#define GEAR_RATIO 13.0f
 #define STEPS_PER_REV 200
 #define MICROSTEPS 8
 
@@ -20,7 +20,7 @@
 #define MAX_SPEED 6.0
 #define MAX_ACCELERATION 3.14
 
-#define INVERT_AS5600 true
+#define INVERT_AS5600 false
 #define SPEED_FILTER_ALPHA 0.1f
 #define SPEED_DEADBAND 0.01f
 
@@ -34,6 +34,6 @@
 #define CONTROL_LOOP_FREQUENCY 100
 
 const char *robot_name = "robot";
-const char *joint_name = "joint_2";
+const char *joint_name = "joint_3";
 
 #endif // CONFIG_H
