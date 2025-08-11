@@ -49,10 +49,12 @@ static const char *TAG = "Actuator";
 typedef struct
 {
     stepper_t stepper;
-    as5600_t as5600;
-    pid_controller_t pid;
-    volatile float position_ctrl;
-    volatile float velocity_ctrl;
+    as5600_t encoder;
+    pid_controller_t pos_pid;
+    volatile float pos_ctrl;
+    volatile float vel_ctrl;
+    volatile float pos;
+    volatile float vel;
 } actuator_t;
 
 actuator_t actuator;
@@ -76,14 +78,14 @@ void command_subscriber_callback(const void *msgin)
     {
         pos = ACTUATOR_MIN;
     }
-    actuator.position_ctrl = pos;
+    actuator.pos_ctrl = pos;
 
     float vel = msg->data.data[1];
     if (fabs(vel) > MAX_SPEED)
     {
         vel = MAX_SPEED;
     }
-    actuator.velocity_ctrl = vel;
+    actuator.vel_ctrl = vel;
 }
 
 void i2c_bus_init(i2c_port_t i2c_num, gpio_num_t sda, gpio_num_t scl)
@@ -112,23 +114,27 @@ void gpio_input_init(gpio_num_t pin)
     gpio_config(&io_conf);
 }
 
-float actuator_get_position(void)
-{
-    return as5600_get_position(&actuator.as5600);
-}
-
 void pid_loop_task(void *param)
 {
     float dt_ms = 1000 / CONTROL_LOOP_FREQUENCY;
+    float dt_s = 1.0f / CONTROL_LOOP_FREQUENCY;
+
+    float pos_feedback;
+    float pos_delta;
+    float vel_feedback = 0;
+    float vel_sig;
 
     for (;;)
     {
-        as5600_update(&actuator.as5600);
+        as5600_update(&actuator.encoder);
+        pos_feedback = as5600_get_position(&actuator.encoder);
+        pos_delta = pos_feedback - actuator.pos;
+        vel_feedback = SPEED_FILTER_ALPHA * (pos_delta / dt_s) + (1 - SPEED_FILTER_ALPHA) * vel_feedback;
+        actuator.pos = pos_feedback;
+        actuator.vel = vel_feedback;
+        vel_sig = pid_update(&actuator.pos_pid, actuator.pos_ctrl, pos_feedback, actuator.vel_ctrl);
 
-        float feedback = as5600_get_position(&actuator.as5600);
-        float control_signal = pid_update(&actuator.pid, actuator.position_ctrl, feedback, actuator.velocity_ctrl);
-
-        stepper_set_velocity(&actuator.stepper, control_signal);
+        stepper_set_velocity(&actuator.stepper, vel_sig);
 
         vTaskDelay(pdMS_TO_TICKS(dt_ms));
     }
@@ -139,8 +145,8 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
     RCLC_UNUSED(last_call_time);
     if (timer != NULL)
     {
-        state_publisher_msg.data.data[0] = actuator_get_position();
-        state_publisher_msg.data.data[1] = as5600_get_velocity(&actuator.as5600);
+        state_publisher_msg.data.data[0] = actuator.pos;
+        state_publisher_msg.data.data[1] = actuator.vel;
         RCSOFTCHECK(rcl_publish(&state_publisher, &state_publisher_msg, NULL));
     }
 }
@@ -230,11 +236,9 @@ void app_main(void)
                  I2C_SCL_GPIO);
 
     as5600_init(
-        &actuator.as5600,
+        &actuator.encoder,
         I2C_PORT,
         AS5600_DEFAULT_ADDR,
-        SPEED_FILTER_ALPHA,
-        SPEED_DEADBAND,
         GEAR_RATIO,
         INVERT_AS5600,
         false);
@@ -254,17 +258,17 @@ void app_main(void)
         INVERT_STEPPER);
 
     pid_init(
-        &actuator.pid,
+        &actuator.pos_pid,
         KP,
         KI,
         KD,
         KF,
         1.0f / CONTROL_LOOP_FREQUENCY);
 
-    actuator.position_ctrl = 0.0f;
-    actuator.velocity_ctrl = 0.0f;
+    actuator.pos_ctrl = 0.0f;
+    actuator.vel_ctrl = 0.0f;
 
-    home(&actuator.stepper, &actuator.as5600);
+    home(&actuator.stepper, &actuator.encoder);
 
 #if defined(RMW_UXRCE_TRANSPORT_CUSTOM)
     rmw_uros_set_custom_transport(
