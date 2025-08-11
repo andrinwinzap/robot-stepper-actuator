@@ -34,6 +34,6 @@
 #define CONTROL_LOOP_FREQUENCY 100
 
 const char *robot_name = "robot";
-const char *joint_name = "joint_3";
+const char *joint_name = "joint_4";
 
 #endif // CONFIG_H
