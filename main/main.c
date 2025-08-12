@@ -153,6 +153,7 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
 
 void micro_ros_task(void *arg)
 {
+try_uros_task:
     rcl_allocator_t allocator = rcl_get_default_allocator();
     rclc_support_t support;
 
@@ -214,12 +215,6 @@ void micro_ros_task(void *arg)
     state_publisher_msg.data.data[1] = 0.0f;
 
     rclc_executor_spin(&executor);
-
-    // free resources
-    RCCHECK(rcl_publisher_fini(&state_publisher, &node));
-    RCCHECK(rcl_node_fini(&node));
-
-    vTaskDelete(NULL);
 }
 
 static size_t uart_port = UART_NUM_1;
@@ -263,6 +258,7 @@ void app_main(void)
         KI,
         KD,
         KF,
+        MAX_SPEED,
         1.0f / CONTROL_LOOP_FREQUENCY);
 
     actuator.pos_ctrl = 0.0f;
