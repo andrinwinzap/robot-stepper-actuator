@@ -18,9 +18,6 @@ typedef struct
     bool step_level;
     bool running;
     float velocity;
-    float max_velocity;
-    float max_acceleration;
-    int64_t last_update_us;
 
     gptimer_handle_t timer;
 } stepper_t;
@@ -32,8 +29,6 @@ void stepper_init(stepper_t *stepper,
                   float gear_ratio,
                   uint16_t steps_per_rev,
                   uint8_t microsteps,
-                  float max_velocity,
-                  float max_acceleration,
                   bool invert_direction);
 void stepper_enable(const stepper_t *stepper);
 void stepper_disable(const stepper_t *stepper);

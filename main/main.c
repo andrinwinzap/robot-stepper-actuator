@@ -55,6 +55,7 @@ typedef struct
     volatile float vel_ctrl;
     volatile float pos;
     volatile float vel;
+    volatile float acc;
 } actuator_t;
 
 actuator_t actuator;
@@ -81,9 +82,9 @@ void command_subscriber_callback(const void *msgin)
     actuator.pos_ctrl = pos;
 
     float vel = msg->data.data[1];
-    if (fabs(vel) > MAX_SPEED)
+    if (fabs(vel) > MAX_VELOCITY)
     {
-        vel = MAX_SPEED;
+        vel = MAX_VELOCITY;
     }
     actuator.vel_ctrl = vel;
 }
@@ -121,18 +122,46 @@ void pid_loop_task(void *param)
 
     float pos_feedback;
     float pos_delta;
+
     float vel_feedback = 0;
+    float vel_delta;
+
+    float acc_feedback = 0;
+
     float vel_sig;
+    float vel_sig_delta;
+    float max_vel_sig_delta = MAX_ACCELERATION * dt_s;
 
     for (;;)
     {
         as5600_update(&actuator.encoder);
         pos_feedback = as5600_get_position(&actuator.encoder);
+
         pos_delta = pos_feedback - actuator.pos;
-        vel_feedback = SPEED_FILTER_ALPHA * (pos_delta / dt_s) + (1 - SPEED_FILTER_ALPHA) * vel_feedback;
+        vel_feedback = VELOCITY_FILTER_ALPHA * (pos_delta / dt_s) + (1.0f - VELOCITY_FILTER_ALPHA) * vel_feedback;
+
+        vel_delta = vel_feedback - actuator.vel;
+        acc_feedback = ACCELERATION_FILTER_ALPHA * (vel_delta / dt_s) + (1.0f - ACCELERATION_FILTER_ALPHA) * acc_feedback;
+
         actuator.pos = pos_feedback;
         actuator.vel = vel_feedback;
-        vel_sig = pid_update(&actuator.pos_pid, actuator.pos_ctrl, pos_feedback, actuator.vel_ctrl);
+        actuator.acc = acc_feedback;
+
+        vel_sig = pid_update(&actuator.pos_pid,
+                             actuator.pos_ctrl,
+                             pos_feedback,
+                             actuator.vel_ctrl);
+
+        vel_sig_delta = vel_sig - vel_feedback;
+
+        if (vel_sig_delta > max_vel_sig_delta)
+        {
+            vel_sig = vel_feedback + max_vel_sig_delta;
+        }
+        else if (vel_sig_delta < -max_vel_sig_delta)
+        {
+            vel_sig = vel_feedback - max_vel_sig_delta;
+        }
 
         stepper_set_velocity(&actuator.stepper, vel_sig);
 
@@ -246,10 +275,8 @@ void app_main(void)
         DIR_PIN,
         EN_PIN,
         GEAR_RATIO,
-        STEPS_PER_REV,
+        STEPS_PER_REVOLUTION,
         MICROSTEPS,
-        MAX_SPEED,
-        MAX_ACCELERATION,
         INVERT_STEPPER);
 
     pid_init(
@@ -258,7 +285,7 @@ void app_main(void)
         KI,
         KD,
         KF,
-        MAX_SPEED,
+        MAX_VELOCITY,
         1.0f / CONTROL_LOOP_FREQUENCY);
 
     actuator.pos_ctrl = 0.0f;

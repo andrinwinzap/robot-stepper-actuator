@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include "esp_timer.h"
 
-#define STEPPER_SPEED_CHANGE_THRESHOLD 1e-3
+#define STEPPER_SPEED_CHANGE_THRESHOLD 1e-6
 #define FREQUENCY_THRESHOLD 10
 
 static const char *TAG = "stepper";
@@ -27,8 +27,6 @@ void stepper_init(stepper_t *stepper,
                   float gear_ratio,
                   uint16_t steps_per_rev,
                   uint8_t microsteps,
-                  float max_velocity,
-                  float max_acceleration,
                   bool invert_direction)
 {
     stepper->step_pin = step_pin;
@@ -40,10 +38,7 @@ void stepper_init(stepper_t *stepper,
     stepper->step_level = false;
     stepper->running = false;
     stepper->velocity = 0.0f;
-    stepper->max_velocity = max_velocity;
-    stepper->max_acceleration = max_acceleration;
     stepper->invert_direction = invert_direction;
-    stepper->last_update_us = esp_timer_get_time();
 
     gpio_config_t io_conf = {
         .mode = GPIO_MODE_OUTPUT,
@@ -89,23 +84,6 @@ void stepper_set_velocity(stepper_t *stepper, float target_velocity)
 {
     if (!stepper->timer)
         return;
-
-    int64_t now_us = esp_timer_get_time();
-    float delta_time = (now_us - stepper->last_update_us) / 1e6f;
-    stepper->last_update_us = now_us;
-
-    if (fabsf(target_velocity) > stepper->max_velocity)
-    {
-        target_velocity = (target_velocity > 0) ? stepper->max_velocity : -stepper->max_velocity;
-    }
-
-    float delta_v = target_velocity - stepper->velocity;
-    float max_delta_v = stepper->max_acceleration * delta_time;
-
-    if (fabsf(delta_v) > max_delta_v)
-    {
-        target_velocity = stepper->velocity + copysignf(max_delta_v, delta_v);
-    }
 
     if (fabs(target_velocity - stepper->velocity) < STEPPER_SPEED_CHANGE_THRESHOLD)
         return;
