@@ -23,10 +23,10 @@
 #include "as5600.h"
 #include "stepper.h"
 #include "pid.h"
-#include "home.h"
 #include "macros.h"
 #include "config.h"
 #include "actuator.h"
+#include "home.h"
 
 #define TOPIC_BUFFER_SIZE 64
 #define COMMAND_BUFFER_LEN 2
@@ -77,7 +77,7 @@ void init_control_timer()
     ESP_ERROR_CHECK(gptimer_register_event_callbacks(control_timer, &callbacks, NULL));
 
     gptimer_alarm_config_t alarm_config = {
-        .alarm_count = 1000000 / PID_LOOP_FREQUENCY,
+        .alarm_count = 1000000 / PID_LOOP_FREQUENCY_HZ,
         .reload_count = 0,
         .flags.auto_reload_on_alarm = true,
     };
@@ -115,7 +115,7 @@ void gpio_input_init(gpio_num_t pin)
 
 void pid_loop_task(void *param)
 {
-    float dt_s = 1.0f / CONTROL_LOOP_FREQUENCY;
+    float dt_s = 1.0f / PID_LOOP_FREQUENCY_HZ;
     const int64_t PID_LOG_INTERVAL_US = (int64_t)(1000000.0f / PID_LOG_FREQUENCY_HZ);
 
     double pid_freq = 0.0;
@@ -301,8 +301,8 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "Starting Setup...");
 
-    snprintf(state_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_state", robot_name, joint_name);
-    snprintf(command_subscriber_topic, TOPIC_BUFFER_SIZE, "/%s/%s/send_command", robot_name, joint_name);
+    snprintf(state_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_state", ROBOT_NAME, JOINT_NAME);
+    snprintf(command_subscriber_topic, TOPIC_BUFFER_SIZE, "/%s/%s/send_command", ROBOT_NAME, JOINT_NAME);
 
     pid_semaphore = xSemaphoreCreateBinary();
 
@@ -324,22 +324,22 @@ void app_main(void)
 
     stepper_init(
         &actuator.stepper,
-        STEP_PIN,
-        DIR_PIN,
-        EN_PIN,
+        STEPPER_STEP_PIN,
+        STEPPER_DIR_PIN,
+        STEPPER_EN_PIN,
         GEAR_RATIO,
-        STEPS_PER_REVOLUTION,
-        MICROSTEPS,
+        STEPPER_STEPS_PER_REVOLUTION,
+        STEPPER_MICROSTEPS,
         INVERT_STEPPER);
 
     pid_init(
         &actuator.pos_pid,
-        KP,
-        KI,
-        KD,
-        KF,
+        POSITION_KP,
+        POSITION_KI,
+        POSITION_KD,
+        POSITION_KF,
         ACTUATOR_MAX_VELOCITY,
-        1.0f / CONTROL_LOOP_FREQUENCY);
+        1.0f / PID_LOOP_FREQUENCY_HZ);
 
     actuator.pos_ctrl = 0.0f;
     actuator.vel_ctrl = 0.0f;

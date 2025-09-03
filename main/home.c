@@ -46,7 +46,7 @@ void home(stepper_t *stepper, as5600_t *as5600)
                 {
                     ESP_LOGD(TAG, "Stable sensor signal detected. Setting initial position to 0.");
                     as5600_set_position(as5600, 0.0f);
-                    stepper_set_velocity(stepper, -0.1f);
+                    stepper_set_velocity(stepper, -HOMING_SPEED);
                     state = HOME_MOVE_OFF_SENSOR;
                 }
                 else if (now - hall_trigger_timestamp >= 50)
@@ -70,7 +70,7 @@ void home(stepper_t *stepper, as5600_t *as5600)
             if (fabs(pos) >= 0.1f)
             {
                 ESP_LOGI(TAG, "Moved off hall sensor. Searching for edges.");
-                stepper_set_velocity(stepper, 0.1f);
+                stepper_set_velocity(stepper, HOMING_SPEED);
                 state = HOME_FIND_CW_EDGE;
             }
             break;
@@ -96,7 +96,7 @@ void home(stepper_t *stepper, as5600_t *as5600)
                 ESP_LOGI(TAG, "CCW edge detected at %.4f", ccw_edge);
                 ESP_LOGI(TAG, "Center calculated at %.4f. Returning to center...", center);
                 as5600_set_position(as5600, center);
-                stepper_set_velocity(stepper, -0.1f);
+                stepper_set_velocity(stepper, -HOMING_SPEED);
                 state = HOME_RETURN_TO_CENTER;
             }
             break;
