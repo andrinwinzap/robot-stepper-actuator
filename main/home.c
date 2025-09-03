@@ -1,7 +1,7 @@
 #include "home.h"
 #include "esp_log.h"
 
-static const char *TAG = "homing";
+static const char *TAG = "HOMING";
 
 void home(stepper_t *stepper, as5600_t *as5600)
 {

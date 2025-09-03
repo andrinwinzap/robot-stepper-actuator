@@ -6,9 +6,9 @@ const char *joint_name = "joint_3";
 
 #define CONTROL_LOOP_FREQUENCY 100
 
-#define I2C_PORT I2C_NUM_0
-#define I2C_SDA_GPIO 18
-#define I2C_SCL_GPIO 17
+#define AS5600_I2C_PORT I2C_NUM_0
+#define AS5600_I2C_SDA 18
+#define AS5600_I2C_SCL 17
 #define I2C_FREQ_HZ 400000
 #define INVERT_AS5600 false
 
@@ -20,14 +20,14 @@ const char *joint_name = "joint_3";
 #define GEAR_RATIO 13.0f
 #define INVERT_STEPPER false
 
-#define HALL_EFFECT_SENSOR_PIN GPIO_NUM_8
+#define ENDSTOP_PIN GPIO_NUM_8
 
 #define ACTUATOR_MAX M_PI
 #define ACTUATOR_MIN -M_PI
-#define MAX_VELOCITY M_PI * 5
-#define MAX_ACCELERATION M_PI * 5
+#define ACTUATOR_MAX_VELOCITY M_PI * 5
+#define ACTUATOR_MAX_ACCELERATION M_PI * 5
 
-#define VELOCITY_FILTER_ALPHA 0.1f
+#define AS5600_VELOCITY_FILTER_ALPHA 0.1f
 #define ACCELERATION_FILTER_ALPHA 0.1f
 
 #define KP 2.0f

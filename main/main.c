@@ -1,34 +1,32 @@
 #include <string.h>
 #include <stdio.h>
 #include <unistd.h>
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 #include "driver/uart.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
-
+#include "driver/gptimer.h"
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
-#include <std_msgs/msg/float32.h>
 #include <std_msgs/msg/float32_multi_array.h>
-#include <std_msgs/msg/bool.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
-
 #include <rmw_microxrcedds_c/config.h>
 #include <rmw_microros/rmw_microros.h>
 #include "esp32_serial_transport.h"
-
+#include "nvs_flash.h"
 #include "as5600.h"
 #include "stepper.h"
 #include "pid.h"
 #include "home.h"
-
 #include "macros.h"
 #include "config.h"
+#include "actuator.h"
 
 #define TOPIC_BUFFER_SIZE 64
 #define COMMAND_BUFFER_LEN 2
@@ -44,49 +42,49 @@ std_msgs__msg__Float32MultiArray command_subscriber_msg;
 char command_subscriber_topic[TOPIC_BUFFER_SIZE];
 static float command_buffer[COMMAND_BUFFER_LEN];
 
-static const char *TAG = "Actuator";
+SemaphoreHandle_t pid_semaphore;
 
-typedef struct
-{
-    stepper_t stepper;
-    as5600_t encoder;
-    pid_controller_t pos_pid;
-    volatile float pos_ctrl;
-    volatile float vel_ctrl;
-    volatile float pos;
-    volatile float vel;
-    volatile float acc;
-} actuator_t;
+static gptimer_handle_t control_timer = NULL;
+
+static size_t uart_port = UART_NUM_1;
 
 actuator_t actuator;
 
-void command_subscriber_callback(const void *msgin)
+static const char *TAG = "Actuator";
+
+bool IRAM_ATTR gptimer_callback(gptimer_handle_t timer, const gptimer_alarm_event_data_t *edata, void *user_data)
 {
-    const std_msgs__msg__Float32MultiArray *msg = (const std_msgs__msg__Float32MultiArray *)msgin;
+    BaseType_t high_task_wakeup = pdFALSE;
 
-    if (msg->data.size < 2)
-    {
-        ESP_LOGW(TAG, "Received command with insufficient data size: %zu", msg->data.size);
-        return;
-    }
+    xSemaphoreGiveFromISR(pid_semaphore, &high_task_wakeup);
 
-    float pos = msg->data.data[0];
-    if (pos > ACTUATOR_MAX)
-    {
-        pos = ACTUATOR_MAX;
-    }
-    else if (pos < ACTUATOR_MIN)
-    {
-        pos = ACTUATOR_MIN;
-    }
-    actuator.pos_ctrl = pos;
+    return high_task_wakeup == pdTRUE;
+}
 
-    float vel = msg->data.data[1];
-    if (fabs(vel) > MAX_VELOCITY)
-    {
-        vel = MAX_VELOCITY;
-    }
-    actuator.vel_ctrl = vel;
+void init_control_timer()
+{
+    gptimer_config_t timer_config = {
+        .clk_src = GPTIMER_CLK_SRC_DEFAULT,
+        .direction = GPTIMER_COUNT_UP,
+        .resolution_hz = 1000000,
+    };
+
+    ESP_ERROR_CHECK(gptimer_new_timer(&timer_config, &control_timer));
+
+    gptimer_event_callbacks_t callbacks = {
+        .on_alarm = gptimer_callback,
+    };
+    ESP_ERROR_CHECK(gptimer_register_event_callbacks(control_timer, &callbacks, NULL));
+
+    gptimer_alarm_config_t alarm_config = {
+        .alarm_count = 1000000 / PID_LOOP_FREQUENCY,
+        .reload_count = 0,
+        .flags.auto_reload_on_alarm = true,
+    };
+    ESP_ERROR_CHECK(gptimer_set_alarm_action(control_timer, &alarm_config));
+
+    ESP_ERROR_CHECK(gptimer_enable(control_timer));
+    ESP_ERROR_CHECK(gptimer_start(control_timer));
 }
 
 void i2c_bus_init(i2c_port_t i2c_num, gpio_num_t sda, gpio_num_t scl)
@@ -117,55 +115,79 @@ void gpio_input_init(gpio_num_t pin)
 
 void pid_loop_task(void *param)
 {
-    float dt_ms = 1000 / CONTROL_LOOP_FREQUENCY;
     float dt_s = 1.0f / CONTROL_LOOP_FREQUENCY;
+    const int64_t PID_LOG_INTERVAL_US = (int64_t)(1000000.0f / PID_LOG_FREQUENCY_HZ);
+
+    double pid_freq = 0.0;
+    double loop_time_us = 0.0;
+    int64_t last_us = 0;
+    int64_t last_log_us = 0;
 
     float pos_feedback;
     float pos_delta;
-
     float vel_feedback = 0;
-    float vel_delta;
-
-    float acc_feedback = 0;
-
     float vel_sig;
     float vel_sig_delta;
-    float max_vel_sig_delta = MAX_ACCELERATION * dt_s;
+    float max_vel_sig_delta = ACTUATOR_MAX_ACCELERATION * dt_s;
 
+    as5600_update(&actuator.encoder);
+    actuator.pos = as5600_get_position(&actuator.encoder);
     for (;;)
     {
-        as5600_update(&actuator.encoder);
-        pos_feedback = as5600_get_position(&actuator.encoder);
-
-        pos_delta = pos_feedback - actuator.pos;
-        vel_feedback = VELOCITY_FILTER_ALPHA * (pos_delta / dt_s) + (1.0f - VELOCITY_FILTER_ALPHA) * vel_feedback;
-
-        vel_delta = vel_feedback - actuator.vel;
-        acc_feedback = ACCELERATION_FILTER_ALPHA * (vel_delta / dt_s) + (1.0f - ACCELERATION_FILTER_ALPHA) * acc_feedback;
-
-        actuator.pos = pos_feedback;
-        actuator.vel = vel_feedback;
-        actuator.acc = acc_feedback;
-
-        vel_sig = pid_update(&actuator.pos_pid,
-                             actuator.pos_ctrl,
-                             pos_feedback,
-                             actuator.vel_ctrl);
-
-        vel_sig_delta = vel_sig - vel_feedback;
-
-        if (vel_sig_delta > max_vel_sig_delta)
+        if (xSemaphoreTake(pid_semaphore, portMAX_DELAY) == pdTRUE)
         {
-            vel_sig = vel_feedback + max_vel_sig_delta;
-        }
-        else if (vel_sig_delta < -max_vel_sig_delta)
-        {
-            vel_sig = vel_feedback - max_vel_sig_delta;
+            int64_t loop_start_us = esp_timer_get_time();
+
+            as5600_update(&actuator.encoder);
+            pos_feedback = as5600_get_position(&actuator.encoder);
+            pos_delta = pos_feedback - actuator.pos;
+            vel_feedback = AS5600_VELOCITY_FILTER_ALPHA * (pos_delta / dt_s) + (1.0f - AS5600_VELOCITY_FILTER_ALPHA) * vel_feedback;
+            actuator.pos = pos_feedback;
+            actuator.vel = vel_feedback;
+
+            vel_sig = pid_update(&actuator.pos_pid,
+                                 actuator.pos_ctrl,
+                                 pos_feedback,
+                                 actuator.vel_ctrl);
+
+            vel_sig_delta = vel_sig - vel_feedback;
+
+            if (vel_sig_delta > max_vel_sig_delta)
+            {
+                vel_sig = vel_feedback + max_vel_sig_delta;
+            }
+            else if (vel_sig_delta < -max_vel_sig_delta)
+            {
+                vel_sig = vel_feedback - max_vel_sig_delta;
+            }
+
+            stepper_set_velocity(&actuator.stepper, vel_sig);
+
+            actuator.pos_ctrl += actuator.vel_ctrl * dt_s;
+
+            int64_t now_us = esp_timer_get_time();
+            loop_time_us = PID_LOOP_TIME_ALPHA * (float)(now_us - loop_start_us) + (1.0f - PID_LOOP_TIME_ALPHA) * loop_time_us;
+
+            if (last_us > 0)
+            {
+                float time_between_loops_ms = (now_us - last_us) / 1000.0f;
+                float current_frequency = 1000.0f / time_between_loops_ms;
+                pid_freq = PID_FREQ_ALPHA * current_frequency + (1.0f - PID_FREQ_ALPHA) * pid_freq;
+            }
+            last_us = now_us;
+
+            if ((now_us - last_log_us) >= PID_LOG_INTERVAL_US)
+            {
+                ESP_LOGD(TAG,
+                         "PID Freq: %.2f Hz | Loop: %.0f us | "
+                         "vel_meas=%.4f vel_ctrl=%.4f",
+                         pid_freq, loop_time_us,
+                         vel_feedback, vel_sig);
+                last_log_us = now_us;
+            }
         }
 
-        stepper_set_velocity(&actuator.stepper, vel_sig);
-
-        vTaskDelay(pdMS_TO_TICKS(dt_ms));
+        taskYIELD();
     }
 }
 
@@ -178,6 +200,35 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
         state_publisher_msg.data.data[1] = actuator.vel;
         RCSOFTCHECK(rcl_publish(&state_publisher, &state_publisher_msg, NULL));
     }
+}
+
+void command_subscriber_callback(const void *msgin)
+{
+    const std_msgs__msg__Float32MultiArray *msg = (const std_msgs__msg__Float32MultiArray *)msgin;
+
+    if (msg->data.size < 2)
+    {
+        ESP_LOGW(TAG, "Received command with insufficient data size: %zu", msg->data.size);
+        return;
+    }
+
+    float pos = msg->data.data[0];
+    if (pos > ACTUATOR_MAX)
+    {
+        pos = ACTUATOR_MAX;
+    }
+    else if (pos < ACTUATOR_MIN)
+    {
+        pos = ACTUATOR_MIN;
+    }
+    actuator.pos_ctrl = pos;
+
+    float vel = msg->data.data[1];
+    if (fabs(vel) > ACTUATOR_MAX_VELOCITY)
+    {
+        vel = ACTUATOR_MAX_VELOCITY;
+    }
+    actuator.vel_ctrl = vel;
 }
 
 void micro_ros_task(void *arg)
@@ -246,8 +297,6 @@ try_uros_task:
     rclc_executor_spin(&executor);
 }
 
-static size_t uart_port = UART_NUM_1;
-
 void app_main(void)
 {
     ESP_LOGI(TAG, "Starting Setup...");
@@ -255,19 +304,23 @@ void app_main(void)
     snprintf(state_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_state", robot_name, joint_name);
     snprintf(command_subscriber_topic, TOPIC_BUFFER_SIZE, "/%s/%s/send_command", robot_name, joint_name);
 
-    i2c_bus_init(I2C_PORT,
-                 I2C_SDA_GPIO,
-                 I2C_SCL_GPIO);
+    pid_semaphore = xSemaphoreCreateBinary();
+
+    init_control_timer();
+
+    i2c_bus_init(AS5600_I2C_PORT,
+                 AS5600_I2C_SDA,
+                 AS5600_I2C_SCL);
 
     as5600_init(
         &actuator.encoder,
-        I2C_PORT,
+        AS5600_I2C_PORT,
         AS5600_DEFAULT_ADDR,
         GEAR_RATIO,
         INVERT_AS5600,
         false);
 
-    gpio_input_init(HALL_EFFECT_SENSOR_PIN);
+    gpio_input_init(ENDSTOP_PIN);
 
     stepper_init(
         &actuator.stepper,
@@ -285,13 +338,22 @@ void app_main(void)
         KI,
         KD,
         KF,
-        MAX_VELOCITY,
+        ACTUATOR_MAX_VELOCITY,
         1.0f / CONTROL_LOOP_FREQUENCY);
 
     actuator.pos_ctrl = 0.0f;
     actuator.vel_ctrl = 0.0f;
 
     home(&actuator.stepper, &actuator.encoder);
+
+    xTaskCreatePinnedToCore(
+        pid_loop_task,
+        "pid_loop",
+        16384,
+        NULL,
+        10,
+        NULL,
+        1);
 
 #if defined(RMW_UXRCE_TRANSPORT_CUSTOM)
     rmw_uros_set_custom_transport(
@@ -306,20 +368,11 @@ void app_main(void)
 #endif // RMW_UXRCE_TRANSPORT_CUSTOM
 
     xTaskCreatePinnedToCore(
-        pid_loop_task,
-        "control_loop",
-        16384,
-        NULL,
-        10,
-        NULL,
-        1);
-
-    xTaskCreatePinnedToCore(
         micro_ros_task,
         "uros_task",
         16384,
         NULL,
-        20,
+        5,
         NULL,
         0);
 
