@@ -11,7 +11,7 @@
 
 #define HOMING_SPEED 0.1f
 
-#define I2C_FREQ_HZ 400000
+#define I2C_FREQ_HZ 10000
 
 #define GEAR_RATIO 13.0f
 
@@ -26,7 +26,7 @@
 #define AS5600_I2C_SDA 18
 #define AS5600_I2C_SCL 17
 #define AS5600_VELOCITY_FILTER_ALPHA 0.1f
-#define INVERT_AS5600 true
+#define INVERT_AS5600 false
 
 #define STEPPER_STEP_PIN GPIO_NUM_4
 #define STEPPER_DIR_PIN GPIO_NUM_5

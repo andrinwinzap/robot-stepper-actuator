@@ -11,7 +11,7 @@
 
 #define HOMING_SPEED 0.1f
 
-#define I2C_FREQ_HZ 400000
+#define I2C_FREQ_HZ 100000
 
 #define GEAR_RATIO 15.0f
 
