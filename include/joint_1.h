@@ -33,9 +33,9 @@
 #define STEPPER_EN_PIN GPIO_NUM_6
 #define STEPPER_STEPS_PER_REVOLUTION 200
 #define STEPPER_MICROSTEPS 8
-#define INVERT_STEPPER true
+#define INVERT_STEPPER false
 
-#define POSITION_KP 2.0f
+#define POSITION_KP 1.0f
 #define POSITION_KI 0.0f
 #define POSITION_KD 0.0f
 #define POSITION_KF 1.0f

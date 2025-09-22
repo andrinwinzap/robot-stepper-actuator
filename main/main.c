@@ -312,13 +312,19 @@ void app_main(void)
                  AS5600_I2C_SDA,
                  AS5600_I2C_SCL);
 
-    as5600_init(
+    bool encoder_ready = as5600_init(
         &actuator.encoder,
         AS5600_I2C_PORT,
         AS5600_DEFAULT_ADDR,
         GEAR_RATIO,
         INVERT_AS5600,
         false);
+
+    if (!encoder_ready) {
+        ESP_LOGE(TAG, "Setup Failed! Restarting in 5 seconds...");
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
+    }
 
     gpio_input_init(ENDSTOP_PIN);
 
