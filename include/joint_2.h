@@ -9,7 +9,7 @@
 #define PID_FREQ_ALPHA 0.9f
 #define PID_LOOP_TIME_ALPHA 0.9f
 
-#define HOMING_SPEED 0.1f
+#define HOMING_SPEED 0.05f
 
 #define I2C_FREQ_HZ 100000
 
@@ -33,7 +33,7 @@
 #define STEPPER_EN_PIN GPIO_NUM_6
 #define STEPPER_STEPS_PER_REVOLUTION 200
 #define STEPPER_MICROSTEPS 8
-#define INVERT_STEPPER true
+#define INVERT_STEPPER false
  
 #define POSITION_KP 1.0f
 #define POSITION_KI 0.0f
