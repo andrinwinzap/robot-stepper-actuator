@@ -241,6 +241,16 @@ void pid_loop_task(void *param)
             actuator.pos = pos_feedback;
             actuator.vel = vel_feedback;
 
+            actuator.pos_ctrl += actuator.vel_ctrl * dt_s;
+            if (actuator.pos_ctrl > ACTUATOR_MAX) {
+                actuator.pos_ctrl = ACTUATOR_MAX;
+                actuator.vel_ctrl = 0.0f;
+            }
+            else if (actuator.pos_ctrl < ACTUATOR_MIN) {
+                actuator.pos_ctrl = ACTUATOR_MIN;
+                actuator.vel_ctrl = 0.0f;
+            }
+            
             vel_sig = pid_update(&actuator.pos_pid,
                                  actuator.pos_ctrl,
                                  pos_feedback,
@@ -258,9 +268,7 @@ void pid_loop_task(void *param)
             }
 
             stepper_set_velocity(&actuator.stepper, vel_sig);
-
-            actuator.pos_ctrl += actuator.vel_ctrl * dt_s;
-
+            
             int64_t now_us = esp_timer_get_time();
             loop_time_us = PID_LOOP_TIME_ALPHA * (float)(now_us - loop_start_us) + (1.0f - PID_LOOP_TIME_ALPHA) * loop_time_us;
 
@@ -320,10 +328,10 @@ void command_subscriber_callback(const void *msgin)
     actuator.pos_ctrl = pos;
 
     float vel = msg->data.data[1];
-    if (fabs(vel) > ACTUATOR_MAX_VELOCITY)
-    {
+    if (vel > ACTUATOR_MAX_VELOCITY)
         vel = ACTUATOR_MAX_VELOCITY;
-    }
+    else if (vel < -ACTUATOR_MAX_VELOCITY)
+        vel = -ACTUATOR_MAX_VELOCITY;
     actuator.vel_ctrl = vel;
 }
 
