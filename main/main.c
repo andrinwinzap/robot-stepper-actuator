@@ -28,6 +28,10 @@
 #include "actuator.h"
 #include "home.h"
 
+#define LED_OK_PIN       GPIO_NUM_7
+#define LED_ERROR_PIN    GPIO_NUM_15
+#define LED_HOMED_PIN    GPIO_NUM_16
+
 #define TOPIC_BUFFER_SIZE 64
 #define COMMAND_BUFFER_LEN 2
 #define STATE_BUFFER_LEN 2
@@ -197,6 +201,43 @@ void i2c_bus_init(i2c_port_t i2c_num, gpio_num_t sda, gpio_num_t scl)
     ESP_ERROR_CHECK(i2c_driver_install(i2c_num, conf.mode, 0, 0, 0));
 }
 
+void led_init(void)
+{
+    gpio_num_t leds[] = {LED_OK_PIN, LED_ERROR_PIN, LED_HOMED_PIN};
+    for (int i = 0; i < 3; i++) {
+        gpio_set_level(leds[i], 1); // drive high before enabling output to avoid glitch
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << leds[i]),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&io_conf);
+    }
+}
+
+#define ERROR_FLAG_ENCODER  (1u << 0)
+#define ERROR_FLAG_AGENT    (1u << 1)
+
+static volatile uint32_t error_flags = 0;
+
+static void set_error_flag(uint32_t flag)
+{
+    error_flags |= flag;
+    gpio_set_level(LED_OK_PIN, 1);    // ok off
+    gpio_set_level(LED_ERROR_PIN, 0); // error on
+}
+
+static void clear_error_flag(uint32_t flag)
+{
+    error_flags &= ~flag;
+    if (error_flags == 0) {
+        gpio_set_level(LED_ERROR_PIN, 1); // error off
+        gpio_set_level(LED_OK_PIN, 0);    // ok on
+    }
+}
+
 void gpio_input_init(gpio_num_t pin)
 {
     gpio_config_t io_conf = {
@@ -234,7 +275,11 @@ void pid_loop_task(void *param)
         {
             int64_t loop_start_us = esp_timer_get_time();
 
-            as5600_update(&actuator.encoder);
+            if (as5600_update(&actuator.encoder)) {
+                clear_error_flag(ERROR_FLAG_ENCODER);
+            } else {
+                set_error_flag(ERROR_FLAG_ENCODER);
+            }
             pos_feedback = as5600_get_position(&actuator.encoder);
             pos_delta = pos_feedback - actuator.pos;
             vel_feedback = AS5600_VELOCITY_FILTER_ALPHA * (pos_delta / dt_s) + (1.0f - AS5600_VELOCITY_FILTER_ALPHA) * vel_feedback;
@@ -360,6 +405,7 @@ void micro_ros_task(void *arg)
             }
             else
             {
+                set_error_flag(ERROR_FLAG_AGENT);
                 vTaskDelay(pdMS_TO_TICKS(UROS_RECONNECT_DELAY_MS));
             }
             break;
@@ -376,12 +422,14 @@ void micro_ros_task(void *arg)
             {
                 state = AGENT_CONNECTED;
                 last_ping_check_us = esp_timer_get_time();
+                clear_error_flag(ERROR_FLAG_AGENT);
                 ESP_LOGI(TAG, "Agent connected");
             }
             else
             {
                 ESP_LOGW(TAG, "Entity creation failed, retrying...");
                 destroy_micro_ros_entities(&support, &node, &timer, &executor);
+                set_error_flag(ERROR_FLAG_AGENT);
                 state = WAITING_AGENT;
                 vTaskDelay(pdMS_TO_TICKS(UROS_RECONNECT_DELAY_MS));
             }
@@ -409,6 +457,7 @@ void micro_ros_task(void *arg)
 
         case AGENT_DISCONNECTED:
             ESP_LOGW(TAG, "Agent disconnected, destroying entities...");
+            set_error_flag(ERROR_FLAG_AGENT);
             rmw_context_t *rmw_context = rcl_context_get_rmw_context(&support.context);
             if (rmw_context != NULL)
             {
@@ -429,6 +478,9 @@ void micro_ros_task(void *arg)
 void app_main(void)
 {
     ESP_LOGI(TAG, "Starting Setup...");
+
+    led_init();
+    clear_error_flag(0); // all clear → ok LED on
 
     snprintf(state_publisher_topic, TOPIC_BUFFER_SIZE, "/%s/%s/get_state", ROBOT_NAME, JOINT_NAME);
     snprintf(command_subscriber_topic, TOPIC_BUFFER_SIZE, "/%s/%s/send_command", ROBOT_NAME, JOINT_NAME);
@@ -451,6 +503,7 @@ void app_main(void)
 
     if (!encoder_ready) {
         ESP_LOGE(TAG, "Setup Failed! Restarting in 5 seconds...");
+        set_error_flag(ERROR_FLAG_ENCODER);
         vTaskDelay(pdMS_TO_TICKS(5000));
         esp_restart();
     }
@@ -480,6 +533,7 @@ void app_main(void)
     actuator.vel_ctrl = 0.0f;
 
     home(&actuator.stepper, &actuator.encoder);
+    gpio_set_level(LED_HOMED_PIN, 0); // homed LED on
 
     xTaskCreatePinnedToCore(
         pid_loop_task,
