@@ -28,7 +28,6 @@
 #include "actuator.h"
 #include "home.h"
 
-#define LED_OK_PIN       GPIO_NUM_7
 #define LED_ERROR_PIN    GPIO_NUM_15
 #define LED_HOMED_PIN    GPIO_NUM_16
 
@@ -532,7 +531,12 @@ void app_main(void)
     actuator.pos_ctrl = 0.0f;
     actuator.vel_ctrl = 0.0f;
 
-    home(&actuator.stepper, &actuator.encoder);
+    if (!home(&actuator.stepper, &actuator.encoder)) {
+        ESP_LOGE(TAG, "Homing failed! Restarting in 5 seconds...");
+        set_error_flag(ERROR_FLAG_ENCODER);
+        vTaskDelay(pdMS_TO_TICKS(5000));
+        esp_restart();
+    }
     gpio_set_level(LED_HOMED_PIN, 0); // homed LED on
 
     xTaskCreatePinnedToCore(

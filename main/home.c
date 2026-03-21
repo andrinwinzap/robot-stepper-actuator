@@ -1,9 +1,10 @@
 #include "home.h"
 #include "esp_log.h"
+#include <stdbool.h>
 
 static const char *TAG = "HOMING";
 
-void home(stepper_t *stepper, as5600_t *as5600)
+bool home(stepper_t *stepper, as5600_t *as5600)
 {
     enum
     {
@@ -24,7 +25,12 @@ void home(stepper_t *stepper, as5600_t *as5600)
 
     while (1)
     {
-        as5600_update(as5600);
+        if (!as5600_update(as5600)) {
+            ESP_LOGE(TAG, "Encoder disconnected during homing");
+            stepper_set_velocity(stepper, 0);
+            stepper_disable(stepper);
+            return false;
+        }
         now = xTaskGetTickCount() * portTICK_PERIOD_MS;
         hall_triggered = (gpio_get_level(GPIO_NUM_8) == 0);
 
@@ -108,7 +114,7 @@ void home(stepper_t *stepper, as5600_t *as5600)
             {
                 stepper_set_velocity(stepper, 0);
                 ESP_LOGI(TAG, "Homing complete. Final position: %.4f", pos);
-                return;
+                return true;
             }
             break;
         }
